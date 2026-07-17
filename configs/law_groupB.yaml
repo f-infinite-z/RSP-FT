@@ -1,0 +1,9 @@
+domain: law
+group: B
+sft-model: models/law_sft
+train-data: data/law/qa_pairs_clean/train_mve.json
+test-data: data/law/qa_pairs_clean/test_mve.json
+iterations: 3
+lr: 1.0e-6
+batch-size: 8
+out: models/law_groupB

@@ -1,0 +1,28 @@
+# === 密钥/敏感（绝不提交）===
+configs/judges.yaml
+*.key
+.env
+
+# === 模型/大文件（不提交，太大）===
+models/
+cache/
+*.safetensors
+*.bin
+*.savepoint.json
+
+# === 运行产物 ===
+results/*.json
+results/**/*.png
+*.log
+*.tar.gz
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+
+# === 保留：示例、报告文本、脚本 ===
+!configs/judges.yaml.example
+!results/.gitkeep
+
+# === 系统 ===
+.DS_Store
+Thumbs.db

@@ -1,0 +1,11 @@
+domain: recipe
+data: data/recipe/qa_pairs_clean/train.json
+base: Qwen/Qwen2.5-1.5B-Instruct
+out: models/recipe_sft_1.5b
+epochs: 3
+lr: 2.0e-5
+batch-size: 2
+grad-accum: 16
+max-len: 1536
+lora-r: 16
+lora-alpha: 32

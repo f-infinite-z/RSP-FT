@@ -1,0 +1,9 @@
+﻿domain: poetry
+group: C
+sft-model: models/poetry_sft
+train-data: data/poetry/qa_pairs/train.json
+test-data: data/poetry/qa_pairs/test.json
+iterations: 3
+lr: 1.0e-6
+batch-size: 8
+out: models/poetry_groupC

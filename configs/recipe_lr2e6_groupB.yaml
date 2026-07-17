@@ -1,0 +1,12 @@
+﻿domain: recipe
+group: B
+sft-model: models/recipe_sft
+train-data: data/recipe/qa_pairs_clean/train.json
+test-data: data/recipe/qa_pairs_clean/test_mve.json
+iterations: 5
+lr: 2.0e-6
+lr-schedule: cosine
+warmup-ratio: 0.1
+min-lr-ratio: 0.05
+batch-size: 8
+out: models/recipe_lr2e6_groupB

@@ -1,0 +1,11 @@
+domain: law
+data: data/law/qa_pairs_clean/train_mve.json
+base: Qwen/Qwen2.5-0.5B-Instruct
+out: models/law_sft
+epochs: 3
+lr: 2.0e-5
+batch-size: 8
+grad-accum: 4
+max-len: 2048
+lora-r: 16
+lora-alpha: 32
