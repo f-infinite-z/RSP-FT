@@ -1,0 +1,15 @@
+﻿domain: recipe
+group: C
+sft-model: models/recipe_sft
+train-data: data/recipe/qa_pairs_clean/train.json
+test-data: data/recipe/qa_pairs_clean/test.json
+iterations: 5
+lr: 5.0e-6
+lr-schedule: cosine
+warmup-ratio: 0.1
+min-lr-ratio: 0.05
+batch-size: 8
+out: models/cqls_strong_05b/groupC_strong
+schedule: linear
+final-weight: 6.0
+diag-output: results/grad_diag/C_strong_diag.csv

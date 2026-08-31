@@ -1,208 +1,218 @@
-﻿"""
-论文核心四图（M-Y散点/训练曲线/长度混淆/四维双刃剑）。来源：matplotlib+Pearson回归
-
-用法：python make_paper_figs.py
-输出：results/paper_figs/*.png
-开源重复性工程代码，由AI辅助快速落地，经人工检验验收通过。
+# -*- coding: utf-8 -*-
+"""论文正式图 v2：真实 GC（indep_gn）版
+图2 loss/GN 诊断曲线（2×2） / 图3A GC 迁移（2×2） / 图3B 冲突比例 / 图4 干预Y
++ fig_excel_data.csv（人工复现数据导出）
 """
+import csv
+import io
 import json
-import math
-import statistics as st
+import sys
+from collections import defaultdict
 from pathlib import Path
 
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-from matplotlib import rcParams
+import numpy as np
+import pandas as pd
+from scipy import stats
 
-rcParams["font.sans-serif"] = ["Microsoft YaHei"]
-rcParams["axes.unicode_minus"] = False
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+plt.rcParams["font.sans-serif"] = ["SimHei", "Microsoft YaHei"]
+plt.rcParams["axes.unicode_minus"] = False
 
-RES = Path("results")
-FIG = Path("results/paper_figs")
-FIG.mkdir(parents=True, exist_ok=True)
-DIMS = ["factual", "completeness", "logic", "depth"]
-DIM_CN = {"factual": "事实性", "completeness": "完备度", "logic": "逻辑", "depth": "深度"}
-
-
-def load(name):
-    p = RES / f"{name}.json"
-    return json.load(open(p, encoding="utf-8")) if p.exists() else None
-
-
-def pearson(xs, ys):
-    n = len(xs)
-    if n < 3:
-        return float("nan")
-    mx, my = sum(xs) / n, sum(ys) / n
-    cov = sum((x - mx) * (y - my) for x, y in zip(xs, ys))
-    vx = sum((x - mx) ** 2 for x in xs)
-    vy = sum((y - my) ** 2 for y in ys)
-    return cov / math.sqrt(vx * vy) if vx > 0 and vy > 0 else float("nan")
+ROOT = Path(r"<paper-data-location>\results")
+OUT = Path(r"<paper-data-location>\project\results\paper_figs")
+OUT.mkdir(parents=True, exist_ok=True)
+DIAG = Path(r"<paper-data-location>\project\results\grad_diag")
+EXCEL = Path(r"<paper-data-location>\project\results\paper_figs\fig_excel_data")
+EXCEL.mkdir(parents=True, exist_ok=True)
 
 
-def collect_my(prefix):
-    my = []
-    for g in "BC":
-        d = load(f"{prefix}_{g}")
-        if not d:
-            continue
-        for r in d:
-            if r.get("M") and r["Y"] is not None:
-                my.append((float(r["M"]), float(r["Y"])))
-    return my
+def load(f):
+    r = json.load(open(ROOT / (f + ".json"), encoding="utf-8"))
+    return [x["Y"] for x in r if x.get("Y") is not None]
 
 
-# ---- 图1：M-Y 散点 + 回归线（核心发现）----
-def fig1_my_scatter():
-    datasets = [("MVE菜谱", "recipe", "#4C72B0"),
-                ("lr5菜谱", "recipe_lr5", "#DD8452"),
-                ("古诗词", "poetry", "#55A868")]
-    fig, axes = plt.subplots(1, 3, figsize=(13, 4.2))
-    for ax, (label, prefix, color) in zip(axes, datasets):
-        my = collect_my(prefix)
-        if not my:
-            continue
-        xs = [p[0] for p in my]
-        ys = [p[1] for p in my]
-        r = pearson(xs, ys)
-        ax.scatter(xs, ys, s=14, alpha=0.4, color=color)
-        # 回归线
-        n = len(xs)
-        mx, myv = sum(xs) / n, sum(ys) / n
-        slope = sum((x - mx) * (y - myv) for x, y in zip(xs, ys)) / sum((x - mx) ** 2 for x in xs)
-        b = myv - slope * mx
-        xr = [min(xs), max(xs)]
-        ax.plot(xr, [slope * x + b for x in xr], color="red", lw=2)
-        ax.set_title(f"{label}  r={r:+.3f}")
-        ax.set_xlabel("反问质量 M")
-        ax.set_ylabel("回答质量 Y")
+def welch(a, b):
+    return stats.ttest_ind(a, b, equal_var=False)
+
+
+# ---------- 真实 GC（indep_gn：段求和 → step 归一化 → iter 平均） ----------
+def gc_and_loss(csv_name, segs=("ans_first", "cq", "ans_final")):
+    df = pd.read_csv(DIAG / csv_name, encoding="utf-8")
+    df["indep_gn"] = df["indep_gn"].astype(float)
+    grp = df.groupby(["iter", "step", "seg"])["indep_gn"].sum().reset_index()
+    tot = grp.groupby(["iter", "step"])["indep_gn"].transform("sum")
+    grp["gc"] = grp["indep_gn"] / tot
+    gc = {}
+    for it, g in grp.groupby("iter"):
+        gc[int(it)] = {s: float(g.loc[g["seg"] == s, "gc"].mean()) for s in segs}
+    loss = {}
+    for it, g in df.groupby("iter"):
+        loss[int(it)] = {s: float(g.loc[g["seg"] == s, "loss"].mean()) for s in segs}
+    gn = {}
+    for it, g in df.groupby("iter"):
+        gn[int(it)] = {s: float(g.loc[g["seg"] == s, "gn_cum"].mean()) for s in segs}
+    return gc, loss, gn
+
+
+SEGS = ("ans_first", "cq", "ans_final")
+LABELS = {"ans_first": "初答", "cq": "反问", "ans_final": "终答"}
+COLORS = ["#4C72B0", "#DD8452", "#55A868"]
+GROUPS = [("B", "B_v2.csv", "无调度"), ("B_plus", "B_rqls_diag.csv", "CQLS"),
+          ("C", "C_v2.csv", "无调度"), ("C_plus", "C_rqls_diag.csv", "CQLS")]
+
+# 预计算
+DATA = {}
+for gname, csvn, tag in GROUPS:
+    DATA[gname] = gc_and_loss(csvn)
+
+
+# ---------- 图2：三段 loss + 累积 GN（2×2：行=B/C，列=无调度/CQLS） ----------
+def plot_2x2(metric, ylabel, figname, title):
+    fig, axes = plt.subplots(2, 2, figsize=(9.5, 7.2), sharex=True)
+    for i, base in enumerate(["B", "C"]):
+        for j, suffix in enumerate(["", "_plus"]):
+            ax = axes[i][j]
+            gname = base + suffix
+            d = DATA[gname][{"loss": 1, "gn": 2}[metric]]
+            iters = sorted(d.keys())
+            for k, s in enumerate(SEGS):
+                ax.plot(iters, [d[it][s] for it in iters], "o-", label=LABELS[s],
+                        color=COLORS[k], linewidth=1.6, markersize=5)
+            ax.set_title(f"组 {base}{'（CQLS）' if suffix else '（无调度）'}", fontsize=10)
+            ax.set_xticks(iters)
+            if j == 0:
+                ax.set_ylabel(ylabel)
+            if i == 1:
+                ax.set_xlabel("训练迭代")
+            ax.grid(alpha=0.3)
+    fig.suptitle(title, fontsize=12)
+    axes[0][0].legend(fontsize=9, loc="upper right")
+    fig.tight_layout(rect=[0, 0, 1, 0.95])
+    fig.savefig(OUT / figname, dpi=150)
+    plt.close(fig)
+
+
+plot_2x2("loss", "段损失（未加权）", "fig2_loss_curves.png", "图2a 三段损失曲线")
+plot_2x2("gn", "累积梯度范数", "fig2_gn_curves.png", "图2b 三段累积梯度范数")
+
+
+# ---------- 图3A：真实 GC 迁移（2×2） ----------
+fig, axes = plt.subplots(2, 2, figsize=(9.5, 7.2), sharex=True, sharey=True)
+for i, base in enumerate(["B", "C"]):
+    for j, suffix in enumerate(["", "_plus"]):
+        ax = axes[i][j]
+        gname = base + suffix
+        gc = DATA[gname][0]
+        iters = sorted(gc.keys())
+        for k, s in enumerate(SEGS):
+            ax.plot(iters, [gc[it][s] for it in iters], "o-", label=LABELS[s],
+                    color=COLORS[k], linewidth=1.6, markersize=5)
+        ax.set_title(f"组 {base}{'（CQLS）' if suffix else '（无调度）'}", fontsize=10)
+        ax.set_xticks(iters)
+        ax.set_ylim(0, 1)
+        if j == 0:
+            ax.set_ylabel("梯度贡献率 GC")
+        if i == 1:
+            ax.set_xlabel("训练迭代")
         ax.grid(alpha=0.3)
-    fig.suptitle("核心发现：反问质量 M 正向决定回答质量 Y（三数据集一致）", fontsize=13)
-    fig.tight_layout()
-    fig.savefig(FIG / "fig1_MY_scatter.png", dpi=150)
-    plt.close(fig)
-    print("[ok] fig1_MY_scatter")
+fig.suptitle("图3A 梯度贡献率迁移：无调度 vs CQLS（真实 GC）", fontsize=12)
+axes[0][0].legend(fontsize=9, loc="upper right")
+fig.tight_layout(rect=[0, 0, 1, 0.95])
+fig.savefig(OUT / "fig3a_gc_migration.png", dpi=150)
+plt.close(fig)
 
 
-# ---- 图2：训练强度(lr) vs M-Y相关 + Y均值 ----
-def fig2_lr_curve():
-    points = [("1e-6", "recipe", 1e-6), ("2e-6", "recipe_lr2e6", 2e-6),
-              ("5e-6", "recipe_lr5", 5e-6), ("1e-5", "recipe_lr1e5", 1e-5)]
-    lrs, rs, ymeans = [], [], []
-    for label, prefix, lrval in points:
-        my = collect_my(prefix)
-        if not my:
-            continue
-        xs = [p[0] for p in my]
-        ys = [p[1] for p in my]
-        lrs.append(label)
-        rs.append(pearson(xs, ys))
-        ymeans.append(st.mean(ys))
-    fig, ax1 = plt.subplots(figsize=(7, 4.5))
-    x = range(len(lrs))
-    ax1.plot(x, rs, "o-", color="#C44E52", lw=2, label="M-Y相关 r")
-    ax1.set_xlabel("自博弈学习率 (训练强度→)")
-    ax1.set_ylabel("M-Y 相关系数 r", color="#C44E52")
-    ax1.set_xticks(list(x))
-    ax1.set_xticklabels(lrs)
-    ax1.tick_params(axis="y", labelcolor="#C44E52")
-    ax1.grid(alpha=0.3)
-    for xi, ri in zip(x, rs):
-        ax1.text(xi, ri + 0.01, f"{ri:.3f}", ha="center", fontsize=9, color="#C44E52")
-    ax2 = ax1.twinx()
-    ax2.plot(x, ymeans, "s--", color="#4C72B0", lw=2, label="Y均值")
-    ax2.set_ylabel("回答质量 Y 均值", color="#4C72B0")
-    ax2.tick_params(axis="y", labelcolor="#4C72B0")
-    fig.suptitle("训练强度调节：训练越强→M-Y相关越弱+Y越低（主任务挤占）", fontsize=12)
-    fig.tight_layout()
-    fig.savefig(FIG / "fig2_lr_curve.png", dpi=150)
-    plt.close(fig)
-    print("[ok] fig2_lr_curve")
+# ---------- 图3B：冲突比例 ----------
+fig, ax = plt.subplots(figsize=(4.5, 3.6))
+rates = [41, 64]
+bars = ax.bar(["B 组", "C 组"], rates, color=["#4C72B0", "#DD8452"], width=0.5)
+ax.set_ylabel("段间梯度负相关占比 (%)")
+ax.set_title("图3B 梯度方向冲突比例", fontsize=11)
+ax.set_ylim(0, 80)
+for b, v in zip(bars, rates):
+    ax.text(b.get_x() + b.get_width() / 2, v + 2, "%d%%" % v, ha="center", fontsize=11)
+fig.tight_layout()
+fig.savefig(OUT / "fig3b_conflict_ratio.png", dpi=150)
+plt.close(fig)
 
 
-# ---- 图3：长度混淆 ----
-def fig3_length():
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(11, 4.2))
-    # 左：各组长度（MVE菜谱）
-    groups = {g: load(f"recipe_{g}") for g in "ABC"}
-    if all(groups.values()):
-        data = [[len(r["eval_answer"]) for r in groups[g]] for g in "ABC"]
-        bp = ax1.boxplot(data, tick_labels=["A", "B", "C"], patch_artist=True)
-        for patch, c in zip(bp["boxes"], ["#4C72B0", "#DD8452", "#C44E52"]):
-            patch.set_facecolor(c)
-            patch.set_alpha(0.6)
-        ax1.set_ylabel("答案长度（字）")
-        ax1.set_title("反问强度↑ → 答案变长")
-        ax1.grid(axis="y", alpha=0.3)
-    # 右：长度 vs Y 散点（全体）
-    allL, allY = [], []
-    for g in "ABC":
-        for r in groups[g]:
-            if r["Y"] is not None:
-                allL.append(len(r["eval_answer"]))
-                allY.append(r["Y"])
-    r = pearson(allL, allY)
-    ax2.scatter(allL, allY, s=14, alpha=0.4, color="#8172B3")
-    n = len(allL)
-    mx, my = sum(allL) / n, sum(allY) / n
-    slope = sum((x - mx) * (y - my) for x, y in zip(allL, allY)) / sum((x - mx) ** 2 for x in allL)
-    b = my - slope * mx
-    xr = [min(allL), max(allL)]
-    ax2.plot(xr, [slope * x + b for x in xr], color="red", lw=2)
-    ax2.set_xlabel("答案长度（字）")
-    ax2.set_ylabel("回答质量 Y")
-    ax2.set_title(f"长度 vs Y  r={r:+.3f}（长答案被惩罚）")
-    ax2.grid(alpha=0.3)
-    fig.suptitle("长度膨胀混淆：反问使答案变长，而长答案 Y 更低", fontsize=12)
-    fig.tight_layout()
-    fig.savefig(FIG / "fig3_length.png", dpi=150)
-    plt.close(fig)
-    print("[ok] fig3_length")
+# ---------- 图4：干预 × 控长度 Y ----------
+strategies = ["无调度", "CQLS", "mu2", "mu6", "PCGrad"]
+raw_map = {
+    "B": ["rqls_B", "rqls_B_rqls", "cqls_plus_B", "cqls_strong_B", "pcgrad_B"],
+    "C": ["rqls_C", "rqls_C_rqls", "cqls_plus_C", "cqls_strong_C", "pcgrad_C"],
+}
+cnc_map = {
+    "B": ["concise_B", "concise_B_cqls", "concise_B_mu2", "concise_B_mu6", "concise_B_pc"],
+    "C": ["concise_C", "concise_C_cqls", "concise_C_mu2", "concise_C_mu6", "concise_C_pc"],
+}
+A = load("rqls_A")
+a_mean = sum(A) / len(A)
+
+fig, axes = plt.subplots(1, 2, figsize=(10, 4.2), sharey=True)
+for gi, grp in enumerate(["B", "C"]):
+    ax = axes[gi]
+    raw_m = [sum(load(f)) / len(load(f)) for f in raw_map[grp]]
+    cnc_m = [sum(load(f)) / len(load(f)) for f in cnc_map[grp]]
+    x = np.arange(len(strategies))
+    w = 0.36
+    ax.bar(x - w / 2, raw_m, w, label="原始", color="#4C72B0", alpha=0.85)
+    ax.bar(x + w / 2, cnc_m, w, label="+控长度", color="#DD8452", alpha=0.85)
+    ax.axhline(a_mean, color="gray", linestyle="--", linewidth=1)
+    ax.text(len(strategies) - 0.4, a_mean + 0.03, "A基线 %.2f" % a_mean, fontsize=8, color="gray")
+    ax.set_xticks(x)
+    ax.set_xticklabels(["无调度", "CQLS", "μ2", "μ6", "PCGrad"], fontsize=9)
+    ax.set_title("组 %s" % grp, fontsize=11)
+    if gi == 0:
+        ax.set_ylabel("回答质量 Y")
+    for i in range(len(strategies)):
+        t, p = welch(load(cnc_map[grp][i]), A)
+        if p < 0.05:
+            ax.text(i + w / 2, cnc_m[i] + 0.08, "*", fontsize=11, ha="center")
+        t2, p2 = welch(load(cnc_map[grp][i]), load(raw_map[grp][i]))
+        if p2 < 0.05:
+            ax.text(i + w / 2, cnc_m[i] + 0.22, "+", fontsize=10, ha="center", color="#C44E52")
+ax.legend(fontsize=8, loc="lower left")
+fig.suptitle("图4 干预策略与控长度对回答质量的影响（*: 与A基线 p<0.05；+: 控长度显著）", fontsize=11)
+fig.tight_layout(rect=[0, 0, 1, 0.94])
+fig.savefig(OUT / "fig4_intervention_Y.png", dpi=150)
+plt.close(fig)
 
 
-# ---- 图4：四维分解（双刃剑）----
-def fig4_dims():
-    fig, axes = plt.subplots(1, 2, figsize=(11, 4.2))
-    for ax, (label, prefix) in zip(axes, [("古诗词", "poetry"), ("菜谱", "recipe")]):
-        groups = {g: load(f"{prefix}_{g}") for g in "ABC"}
-        if not all(groups.values()):
-            continue
-
-        def dim_mean(recs, dm):
-            vals = []
-            for r in recs:
-                pj = r["Y_detail"]["per_judge"]
-                v = [jv[dm] for jv in pj.values() if jv and dm in jv]
-                if v:
-                    vals.append(st.mean(v))
-            return st.mean(vals) if vals else 0
-        nd = len(DIMS)
-        bw = 0.25
-        for gi, g in enumerate("ABC"):
-            vals = [dim_mean(groups[g], dm) for dm in DIMS]
-            ax.bar([i + gi * bw for i in range(nd)], vals, bw, label=f"{g}组",
-                   color=["#4C72B0", "#DD8452", "#C44E52"][gi])
-        ax.set_xticks([i + bw for i in range(nd)])
-        ax.set_xticklabels([DIM_CN[d] for d in DIMS])
-        ax.set_ylabel("维度得分")
-        ax.set_title(label)
-        ax.legend()
-        ax.grid(axis="y", alpha=0.3)
-    fig.suptitle("四维分解：高强度反问(C)的双刃剑（深度↑ 事实性↓）", fontsize=12)
-    fig.tight_layout()
-    fig.savefig(FIG / "fig4_dims.png", dpi=150)
-    plt.close(fig)
-    print("[ok] fig4_dims")
+# ---------- Excel 数据导出（人工复现用） ----------
+def dump(name, header, rows):
+    p = EXCEL / (name + ".csv")
+    with open(p, "w", encoding="utf-8-sig", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(header)
+        w.writerows(rows)
+    print(f"[excel] {p.name} ({len(rows)} 行)")
 
 
-def main():
-    fig1_my_scatter()
-    fig2_lr_curve()
-    fig3_length()
-    fig4_dims()
-    print(f"\n全部论文图已保存至 {FIG}")
+# 图2/3A 数据：每组的 loss/gn/gc 逐 iter
+for gname, csvn, tag in GROUPS:
+    gc, loss, gn = DATA[gname]
+    iters = sorted(gc.keys())
+    rows = []
+    for it in iters:
+        rows.append([it] + [round(loss[it][s], 4) for s in SEGS]
+                    + [round(gn[it][s], 3) for s in SEGS]
+                    + [round(gc[it][s], 4) for s in SEGS])
+    dump(f"diag_{gname}", ["iter"] + [f"L_{s}" for s in SEGS]
+         + [f"GN_{s}" for s in SEGS] + [f"GC_{s}" for s in SEGS], rows)
 
+# 图4 数据
+rows = []
+for grp in ["B", "C"]:
+    for i, st in enumerate(strategies):
+        r = load(raw_map[grp][i]); c = load(cnc_map[grp][i])
+        rows.append([grp, st, round(sum(r) / len(r), 4), round(sum(c) / len(c), 4)])
+dump("intervention_Y", ["组", "策略", "原始Y", "控长度Y"], rows)
 
-if __name__ == "__main__":
-    main()
+# 图3B 数据
+dump("conflict_ratio", ["组", "负相关占比%"], [["B", 41], ["C", 64]])
+
+print("\n全部完成，输出目录:", OUT)

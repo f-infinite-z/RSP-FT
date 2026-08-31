@@ -11,6 +11,7 @@ pip install -r requirements.txt
 export HF_ENDPOINT=https://hf-mirror.com   # 国内加速（可选）
 export HF_HUB_DISABLE_XET=1                # 用hf-mirror时必加：xet协议与镜像不兼容
 ```
+- **云平台实测**：恒源云 3090-24G 等云 GPU 环境的完整安装命令与踩坑（torch 2.5.1 + transformers 5.13.0 版本组合、清华源、protobuf 等）见 [`ENVIRONMENT_CLOUD.md`](./ENVIRONMENT_CLOUD.md)。
 
 ## 1. 数据准备
 

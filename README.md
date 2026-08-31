@@ -95,8 +95,10 @@ RSP-FT/
 │   ├── analysis/         # mediation (Hayes Model4中介)
 │   └── data/             # 数据处理
 ├── configs/              # 实验配置 + judges.yaml.example
-├── scripts/              # pregen / stat_test / probe / make_figs
+├── scripts/              # pregen / stat_test / probe / make_figs / grad_diag / multitask_diag_n
 ├── data/                 # 数据集（见 data/README）
+├── results/
+│   └── grad_diag_sample/ # 梯度诊断样例数据（B_v2 / MT_v2）
 └── docs/
     ├── REPRODUCE.md      # 复现指南
     └── LESSONS.md        # 方法论经验与踩坑（可复现性核心）
@@ -130,6 +132,18 @@ RSP-FT/
 ## 方法论经验（推荐阅读）
 
 我们在 [`docs/LESSONS.md`](docs/LESSONS.md) 中诚实记录了实验中发现并修正的方法论问题（操纵检验失败、长度混淆、训练强度调节等），供后续研究者避坑与借鉴。这也是本工作可复现性与严谨性的重要组成。
+
+---
+
+## 梯度诊断与调度干预（新增）
+
+多段后训练（自博弈三段、多任务混合）在小模型（≤3B）上存在梯度贡献失衡：反问段喧宾夺主（GC 47%~61%）、尾段相对压制、段间方向冲突（负相关样本 41%~64%）。本仓库新增：
+
+- **诊断工具链**：段独立梯度范数（快照差法）+ GC + 段间余弦（`scripts/grad_diag_analyze.py`、`scripts/multitask_diag_n.py`、`scripts/grad_conflict_diag.py`）
+- **CQLS 干预**：反问损失渐进加权调度（`--schedule linear`，配置见 `configs/recipe_lr5_group{B,C}_rqls.yaml`）
+- **关键发现**：CQLS 是唯一显著有效的干预（C 组 +0.337, p=0.007）；量级加权显著有害（μ6 -0.409, p=0.002）；方向消解/自适应权重无效；CQLS+控长度组合可将普通反问组修复至与单任务基线无显著差异（p=0.616）
+
+方法、复现步骤与样例数据详见 [`docs/GRADIENT_DIAGNOSIS.md`](docs/GRADIENT_DIAGNOSIS.md)。
 
 ---
 

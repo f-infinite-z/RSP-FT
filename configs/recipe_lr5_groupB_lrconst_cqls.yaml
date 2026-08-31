@@ -1,0 +1,12 @@
+﻿domain: recipe
+group: B
+sft-model: models/recipe_sft
+train-data: data/recipe/qa_pairs_clean/train.json
+test-data: data/recipe/qa_pairs_clean/test.json
+iterations: 5
+lr: 5.0e-6
+lr-schedule: constant
+batch-size: 8
+out: models/lrvar_05b/groupB_lrc_cqls
+diag-output: results/grad_diag/B_lrc_cqls_diag.csv
+schedule: linear
