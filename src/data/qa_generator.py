@@ -3,8 +3,7 @@
 基于 chinese-poetry 数据 + LLM API，自动生成训练用的QA对和反问数据。
 
 本脚本由 AI 辅助生成初稿，经人工适配、调试、校验。
-原创 RSP-FT 训练代码为作者独立实现（见 src/training/）。
-数据源：chinese-poetry (https://github.com/chinese-poetry/chinese-poetry)。
+核心算法与实验设计由作者主导完成。数据源：chinese-poetry (https://github.com/chinese-poetry/chinese-poetry)。
 """
 
 import json
