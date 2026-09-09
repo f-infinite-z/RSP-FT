@@ -2,10 +2,18 @@
 """论文正式图 v2：真实 GC（indep_gn）版
 图2 loss/GN 诊断曲线（2×2） / 图3A GC 迁移（2×2） / 图3B 冲突比例 / 图4 干预Y
 + fig_excel_data.csv（人工复现数据导出）
+
+路径解析（按序）：环境变量 → 仓库内默认。
+  RSP_FT_ROOT       实验 JSON 根（默认 <repo>/results）
+  RSP_FT_GRAD_DIAG  梯度诊断 CSV 目录（默认 <repo>/results/grad_diag）
+  RSP_FT_FIG_OUT    图片输出（默认 <repo>/results/paper_figs）
+  RSP_FT_EXCEL      Excel 数据导出（默认 <repo>/results/paper_figs/fig_excel_data）
+完整实验的本地数据目录较大不入库；用环境变量指向你的实际 results 目录即可。
 """
 import csv
 import io
 import json
+import os
 import sys
 from collections import defaultdict
 from pathlib import Path
@@ -21,11 +29,12 @@ sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="repla
 plt.rcParams["font.sans-serif"] = ["SimHei", "Microsoft YaHei"]
 plt.rcParams["axes.unicode_minus"] = False
 
-ROOT = Path(r"<paper-data-location>\results")
-OUT = Path(r"<paper-data-location>\project\results\paper_figs")
+REPO_ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(os.environ.get("RSP_FT_ROOT", REPO_ROOT / "results"))
+DIAG = Path(os.environ.get("RSP_FT_GRAD_DIAG", ROOT / "grad_diag"))
+OUT = Path(os.environ.get("RSP_FT_FIG_OUT", ROOT / "paper_figs"))
 OUT.mkdir(parents=True, exist_ok=True)
-DIAG = Path(r"<paper-data-location>\project\results\grad_diag")
-EXCEL = Path(r"<paper-data-location>\project\results\paper_figs\fig_excel_data")
+EXCEL = Path(os.environ.get("RSP_FT_EXCEL", OUT / "fig_excel_data"))
 EXCEL.mkdir(parents=True, exist_ok=True)
 
 
